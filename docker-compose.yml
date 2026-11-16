@@ -1,0 +1,35 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /app/.venv # venv propre au conteneur, ne pas écraser le .venv de l'hôte
+    ports:
+      - "8000:7860" # Accessible depuis http://localhost:8000
+    environment:
+      PYTHONUNBUFFERED: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s # le chargement du modèle prend quelques secondes
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uv", "run", "streamlit", "run", "app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    volumes:
+      - .:/app
+      - /app/.venv
+    ports:
+      - "8501:8501" # Accessible depuis http://localhost:8501
+    environment:
+      PYTHONUNBUFFERED: "1"
+      API_URL: "http://api:7860" # nom du service Docker, pas localhost
+    depends_on:
+      api:
+        condition: service_healthy
