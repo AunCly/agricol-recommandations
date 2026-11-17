@@ -46,7 +46,7 @@ docker compose up --build
 
 ```bash
 uv run fastapi run api/main.py --port 8000   # terminal 1 : l'API
-uv run streamlit run app.py                  # terminal 2 : le dashboard
+uv run streamlit run dashboard/app.py        # terminal 2 : le dashboard
 ```
 
 ### Endpoints de l'API
@@ -62,7 +62,7 @@ Toutes les routes sauf `/health` exigent l'en-tête `x-api-key`.
 
 ### Le dashboard
 
-Le dashboard (`app.py`) ne contient aucune logique de Machine Learning : il interroge l'API et affiche les résultats.
+Le dashboard (`dashboard/app.py`) ne contient aucune logique de Machine Learning : il interroge l'API et affiche les résultats.
 
 - **Prédiction** : choix du pays, de la culture et des conditions de la parcelle, puis affichage du rendement estimé en hg/ha.
 - **Recommandation** : choix du pays et des conditions, puis affichage de la culture recommandée, d'un graphique à barres et du classement complet.

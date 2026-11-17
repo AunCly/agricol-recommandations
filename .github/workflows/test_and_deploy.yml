@@ -1,8 +1,8 @@
-name: Train and Deploy
+name: Test and deploy
 
 on:
   push:
-    branches: [ develop ]
+    branches: [ main ]
 
 jobs:
   test:
@@ -23,7 +23,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.13
 
       - name: Install dependencies
         run: uv sync

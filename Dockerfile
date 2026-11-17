@@ -18,5 +18,6 @@ COPY . .
 
 EXPOSE 7860 8501
 
-# FastAPI par défaut ; le service streamlit du docker-compose surcharge cette commande
-CMD ["uv", "run", "fastapi", "run", "api/main.py", "--port", "7860"]
+# FastAPI par défaut ; le service streamlit du docker-compose surcharge cette commande.
+# Forme « shell » pour lire $PORT (fourni par Render), 7860 par défaut (docker compose).
+CMD uv run fastapi run api/main.py --host 0.0.0.0 --port ${PORT:-7860}
