@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=2.5.4",
     "pandas>=3.0.6",
     "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
     "python-dotenv>=1.2.4",
     "requests>=2.34.2",
     "scikit-learn>=1.9.1",
@@ -20,3 +21,7 @@ dependencies = [
     "streamlit>=1.66.1",
     "utils>=1.0.2",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -24,6 +24,24 @@ MODE_RECOMMANDATION = "Recommandation"
 COLOR_HIGHLIGHT = "#2a78d6"
 COLOR_OTHERS = "#9ec5f4"
 
+# Prix de vente indicatifs (€/tonne), modifiables dans le dashboard
+PRIX_EUR_TONNE = {
+    "Blé": 235.0,
+    "Igname": 1100.0,
+    "Manioc": 100.0,
+    "Maïs": 206.0,
+    "Patate douce": 1500.0,
+    "Plantains et autres": 3100.0,
+    "Pomme de terre": 670.0,
+    "Riz": 445.0,
+    "Soja": 410.0,
+    "Sorgho": 195.0,
+}
+HG_PAR_TONNE = 10_000  # 10 000 hg/ha = 1 t/ha
+
+# Séparateur de milliers français (espace) dans les axes, infobulles et étiquettes
+ALTAIR_LOCALE = {"number": {"decimal": ",", "thousands": "\u202f", "grouping": [3], "currency": ["", " €"]}}
+
 # Libellés et pas des variables du contexte (les bornes viennent de l'API)
 FEATURES = {
     "avg_temp": {"label": "Température moyenne (°C)", "step": 0.1, "widget": "slider"},
@@ -115,41 +133,100 @@ def show_prediction(result: dict, payload: dict) -> None:
     )
 
 
+def format_eur_ha(value: float) -> str:
+    return f"{value:,.0f} €/ha".replace(",", " ")
+
+
+def ranked_bar_chart(data: pd.DataFrame, field: str, axis_title: str, tooltip: list) -> alt.Chart:
+    """Barres horizontales triées par `field` décroissant, la meilleure culture mise en avant."""
+    data = data.assign(meilleure=data[field] == data[field].max())
+    base = alt.Chart(data).encode(
+        y=alt.Y("item:N", sort=alt.EncodingSortField(field=field, order="descending"), title=None),
+        x=alt.X(f"{field}:Q", title=axis_title, axis=alt.Axis(format=",.0f")),
+    )
+    bars = base.mark_bar(cornerRadiusEnd=4, height={"band": 0.7}).encode(
+        color=alt.condition(alt.datum.meilleure, alt.value(COLOR_HIGHLIGHT), alt.value(COLOR_OTHERS)),
+        tooltip=tooltip,
+    )
+    # Valeur affichée uniquement sur la meilleure culture, les autres sont dans l'infobulle
+    label = base.transform_filter(alt.datum.meilleure).mark_text(align="left", dx=6).encode(
+        text=alt.Text(f"{field}:Q", format=",.0f"),
+    )
+    return (bars + label).properties(height=36 * len(data)).configure(locale=ALTAIR_LOCALE)
+
+
+def price_inputs(cultures: list[str]) -> dict[str, float]:
+    """Tableau éditable des prix de vente, pré-rempli avec les prix par défaut."""
+    with st.expander("Prix de vente utilisés (€/tonne) — modifiables"):
+        prices = pd.DataFrame(
+            {"Culture": cultures, "Prix (€/t)": [PRIX_EUR_TONNE.get(c, 0.0) for c in cultures]}
+        )
+        edited = st.data_editor(
+            prices,
+            hide_index=True,
+            width="stretch",
+            disabled=["Culture"],
+            column_config={"Prix (€/t)": st.column_config.NumberColumn(min_value=0.0, step=5.0, format="%.0f €")},
+            key="prix_editor",
+        )
+    return dict(zip(edited["Culture"], edited["Prix (€/t)"].fillna(0.0)))
+
+
 def show_recommendation(result: list[dict], payload: dict) -> None:
     ranking = pd.DataFrame(result)
+    prices = price_inputs(ranking["item"].tolist())
+    ranking["yield_t_ha"] = ranking["yield_hg_ha"] / HG_PAR_TONNE
+    ranking["price_eur_t"] = ranking["item"].map(prices)
+    ranking["revenue_eur_ha"] = ranking["yield_t_ha"] * ranking["price_eur_t"]
+
     best = ranking.iloc[0]
+    best_revenue = ranking.loc[ranking["revenue_eur_ha"].idxmax()]
 
     st.success(f"Culture recommandée pour **{payload['area']}** : **{best['item']}**")
     col_best, col_second = st.columns(2)
-    col_best.metric("Rendement estimé (n°1)", format_hg_ha(best["yield_hg_ha"]))
+    col_best.metric(f"Meilleur rendement — {best['item']}", format_hg_ha(best["yield_hg_ha"]))
+    col_second.metric(f"Meilleur CA estimé — {best_revenue['item']}", format_eur_ha(best_revenue["revenue_eur_ha"]))
+    if best_revenue["item"] != best["item"]:
+        st.info(
+            f"En valeur, **{best_revenue['item']}** rapporte plus que **{best['item']}** "
+            "malgré un rendement plus faible, grâce à un prix à la tonne plus élevé."
+        )
 
     st.subheader("Rendement estimé par culture")
-    chart_data = ranking.assign(recommandee=ranking["rank"] == 1)
-    base = alt.Chart(chart_data).encode(
-        y=alt.Y("item:N", sort=alt.SortField("rank"), title=None),
-        x=alt.X("yield_hg_ha:Q", title="Rendement estimé (hg/ha)", axis=alt.Axis(format=",.0f")),
-    )
-    bars = base.mark_bar(cornerRadiusEnd=4, height={"band": 0.7}).encode(
-        color=alt.condition(
-            alt.datum.recommandee,
-            alt.value(COLOR_HIGHLIGHT),
-            alt.value(COLOR_OTHERS),
+    st.altair_chart(
+        ranked_bar_chart(
+            ranking,
+            "yield_hg_ha",
+            "Rendement estimé (hg/ha)",
+            [
+                alt.Tooltip("rank:O", title="Rang"),
+                alt.Tooltip("item:N", title="Culture"),
+                alt.Tooltip("yield_hg_ha:Q", title="Rendement (hg/ha)", format=",.0f"),
+            ],
         ),
-        tooltip=[
-            alt.Tooltip("rank:O", title="Rang"),
-            alt.Tooltip("item:N", title="Culture"),
-            alt.Tooltip("yield_hg_ha:Q", title="Rendement (hg/ha)", format=",.0f"),
-        ],
+        width="stretch",
     )
-    # Valeur affichée uniquement sur la culture recommandée, les autres sont dans le tableau
-    label = base.transform_filter(alt.datum.recommandee).mark_text(align="left", dx=6).encode(
-        text=alt.Text("yield_hg_ha:Q", format=",.0f"),
+
+    st.subheader("Chiffre d'affaires estimé par culture")
+    st.altair_chart(
+        ranked_bar_chart(
+            ranking,
+            "revenue_eur_ha",
+            "Chiffre d'affaires estimé (€/ha)",
+            [
+                alt.Tooltip("item:N", title="Culture"),
+                alt.Tooltip("yield_t_ha:Q", title="Rendement (t/ha)", format=",.1f"),
+                alt.Tooltip("price_eur_t:Q", title="Prix (€/t)", format=",.0f"),
+                alt.Tooltip("revenue_eur_ha:Q", title="CA estimé (€/ha)", format=",.0f"),
+            ],
+        ),
+        width="stretch",
     )
-    chart = (bars + label).properties(height=36 * len(ranking)).configure(
-        # Séparateur de milliers français (espace) dans l'axe, les infobulles et l'étiquette
-        locale={"number": {"decimal": ",", "thousands": "\u202f", "grouping": [3], "currency": ["", " €"]}}
+    st.caption(
+        "CA estimé = rendement estimé (t/ha) × prix de vente (€/t). Prix unique par culture, "
+        "indépendant du pays et de l'année ; les coûts de production ne sont pas déduits (ce n'est pas une marge)."
     )
-    st.altair_chart(chart, width="stretch")
+
 
 def main() -> None:
     st.set_page_config(page_title="Agritech Answers", page_icon="🌾", layout="centered")
