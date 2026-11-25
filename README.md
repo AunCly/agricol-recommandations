@@ -87,6 +87,8 @@ Attendus :
 │   ├── predictor.py             # Chargement du modèle, prédiction et recommandation
 │   ├── agriculture_model.joblib # Modèle de production (Git LFS)
 │   └── agriculture_model_metadata.json  # Métadonnées lues par l'API
+├── pipeline/
+│   └── train.py                 # Réentraînement : entraînement, évaluation, validation, sauvegarde
 ├── dashboard/
 │   ├── app.py                   # Interface Streamlit
 │   └── requirements.txt         # Dépendances pour Streamlit Community Cloud
@@ -103,7 +105,8 @@ Attendus :
 │   ├── processed/               # Fichiers nettoyés, un par source
 │   └── rafined/                 # Jeu de données final fusionné
 ├── tests/
-│   └── test_api.py              # Tests de l'API
+│   ├── test_api.py              # Tests de l'API
+│   └── test_pipeline.py         # Tests du pipeline (validation, entraînement sur échantillon)
 ├── todo/                        # Rapport métier, plan de présentation, évolutions
 ├── .github/workflows/           # Pipelines CI/CD
 ├── Dockerfile
@@ -402,12 +405,35 @@ Les tests lisent `API_KEY` dans le `.env` ou dans l'environnement.
 
 | Workflow | Déclencheur | Étapes |
 |---|---|---|
-| `.github/workflows/test.yml` | push sur `develop` | checkout avec LFS → uv → Python 3.13 → `uv sync` → `pytest tests/test_api.py` |
+| `.github/workflows/test.yml` | push sur `develop` | checkout avec LFS → uv → Python 3.13 → `uv sync` → `pytest` |
 | `.github/workflows/test_and_deploy.yml` | push sur `main` | mêmes étapes, préalable au déploiement |
+| `.github/workflows/retrain.yml` | push sur `main` modifiant `data/rafined/dataset.csv` ou `pipeline/`, ou lancement manuel | réentraînement → évaluation → validation → tests → commit du nouveau modèle |
 
 La clé de test est fournie par le secret de dépôt `API_KEY`.
 
 Chaîne visée : **push → tests GitHub Actions → redéploiement automatique** (Render en mode *Auto-Deploy : After CI checks pass*).
+
+### 10.3 Pipeline de réentraînement
+
+Le script `pipeline/train.py` reprend le modèle retenu au cycle 6 et automatise son cycle de vie :
+
+```bash
+uv run python -m pipeline.train
+```
+
+| Étape | Ce qui est fait |
+|---|---|
+| 1. Données | lecture de `data/rafined/dataset.csv`, découpage temporel train (avant 2009) / test (2009-2013) |
+| 2. Entraînement | Random Forest du cycle 6 entraînée sur le train |
+| 3. Évaluation | R², MAE et RMSE sur le test, comparés à la baseline naïve (médiane pays × culture) |
+| 4. Validation | le modèle est accepté s'il **bat la baseline** et si sa RMSE ne dépasse pas **de plus de 10 %** celle du modèle en production |
+| 5. Sauvegarde | si accepté : réentraînement sur toutes les années, écriture du `.joblib` et des métadonnées (scores inclus) |
+
+Chaque exécution est tracée dans MLflow (run « Pipeline - réentraînement »), avec la décision d'acceptation en tag. Si le modèle est refusé, rien n'est écrit et le script se termine en erreur.
+
+Dans GitHub Actions (`retrain.yml`), le nouveau modèle n'est commité sur `main` que si la validation **et** les tests de l'API passent ; ce commit déclenche le redéploiement sur Render. Le rapport d'évaluation (métadonnées) est conservé en artefact du workflow.
+
+Limite connue : le modèle en production est entraîné sur toutes les années, il ne peut donc pas être réévalué honnêtement sur le test. La comparaison se fait avec la RMSE enregistrée dans ses métadonnées.
 
 ---
 
