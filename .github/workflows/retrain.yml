@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+# Un seul réentraînement à la fois : le suivant attend la fin du précédent
+concurrency:
+  group: retrain
+
 jobs:
   retrain:
     runs-on: ubuntu-latest
@@ -56,6 +60,8 @@ jobs:
           git lfs install
           git add models/agriculture_model.joblib models/agriculture_model_metadata.json
           git commit -m "Nouveau modèle entraîné par le pipeline"
+          # main a pu avancer pendant l'entraînement : on replace notre commit par-dessus
+          git pull --rebase origin main
           git push
 
       - name: Deploy on Render
