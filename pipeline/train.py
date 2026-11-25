@@ -8,8 +8,9 @@ Reprend le modèle retenu au cycle 6 (notebooks/training_cycle6.ipynb) et encha�
     4. validation : le nouveau modèle n'est accepté que s'il passe les contrôles
     5. réentraînement sur toutes les années et sauvegarde pour l'API
 
-Si la validation échoue, rien n'est écrit et le script se termine en erreur (code 1),
-ce qui arrête le workflow GitHub Actions.
+Si la validation échoue, rien n'est écrit : le modèle actuel est conservé.
+La décision est transmise au workflow GitHub Actions (sortie « accepted »),
+qui ne publie et ne déploie le modèle que s'il a été accepté.
 
 Lancement, depuis la racine du projet :
     uv run python -m pipeline.train
@@ -17,7 +18,6 @@ Lancement, depuis la racine du projet :
 
 import json
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -56,9 +56,6 @@ MODEL_PARAMS = {
     "max_depth": 40,
     "bootstrap": False,
 }
-
-# Règles de validation d'un nouveau modèle
-MAX_RMSE_DEGRADATION = 0.10  # RMSE au plus 10 % moins bonne que celle du modèle actuel
 
 
 # ---------------------------------------------------------------------------
@@ -142,15 +139,18 @@ def load_current_rmse():
 
 
 def validate(evaluation, current_rmse):
-    """Liste des contrôles et de leur résultat (True = réussi)."""
+    """Liste des contrôles et de leur résultat (True = réussi).
+
+    Le nouveau modèle doit avoir une RMSE strictement plus basse que la baseline
+    et que le modèle actuellement en production.
+    """
     new_rmse = evaluation["modele"]["rmse"]
 
     checks = {
-        "bat la baseline naïve (RMSE)": new_rmse < evaluation["baseline"]["rmse"],
+        f"RMSE {new_rmse:.0f} < baseline {evaluation['baseline']['rmse']:.0f}": new_rmse < evaluation["baseline"]["rmse"],
     }
     if current_rmse is not None:
-        limit = current_rmse * (1 + MAX_RMSE_DEGRADATION)
-        checks[f"RMSE <= {limit:.0f} (modèle actuel + {MAX_RMSE_DEGRADATION:.0%})"] = new_rmse <= limit
+        checks[f"RMSE {new_rmse:.0f} < modèle actuel {current_rmse:.0f}"] = new_rmse < current_rmse
 
     return checks
 
@@ -199,6 +199,14 @@ def log_to_mlflow(evaluation, accepted):
         mlflow.log_metrics({f"baseline_{name}": value for name, value in evaluation["baseline"].items()})
 
 
+def share_decision(accepted):
+    """Transmet la décision aux steps suivants du workflow GitHub Actions."""
+    github_output = os.getenv("GITHUB_OUTPUT")  # n'existe que dans GitHub Actions
+    if github_output:
+        with open(github_output, "a") as file:
+            file.write(f"accepted={str(accepted).lower()}\n")
+
+
 # ---------------------------------------------------------------------------
 
 def main():
@@ -218,10 +226,11 @@ def main():
         print(f"   [{'OK' if passed else 'ÉCHEC'}] {name}")
     accepted = all(checks.values())
     log_to_mlflow(evaluation, accepted)
+    share_decision(accepted)
 
     if not accepted:
         print("Modèle refusé : le modèle actuel est conservé.")
-        sys.exit(1)
+        return
 
     print("5. Réentraînement sur toutes les années et sauvegarde")
     final_model = train(dataset, dataset[TARGET])

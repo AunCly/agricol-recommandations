@@ -426,12 +426,12 @@ uv run python -m pipeline.train
 | 1. Données | lecture de `data/rafined/dataset.csv`, découpage temporel train (avant 2009) / test (2009-2013) |
 | 2. Entraînement | Random Forest du cycle 6 entraînée sur le train |
 | 3. Évaluation | R², MAE et RMSE sur le test, comparés à la baseline naïve (médiane pays × culture) |
-| 4. Validation | le modèle est accepté s'il **bat la baseline** et si sa RMSE ne dépasse pas **de plus de 10 %** celle du modèle en production |
+| 4. Validation | le modèle est accepté seulement si sa RMSE est **strictement plus basse** que celle de la baseline **et** que celle du modèle en production |
 | 5. Sauvegarde | si accepté : réentraînement sur toutes les années, écriture du `.joblib` et des métadonnées (scores inclus) |
 
-Chaque exécution est tracée dans MLflow (run « Pipeline - réentraînement »), avec la décision d'acceptation en tag. Si le modèle est refusé, rien n'est écrit et le script se termine en erreur.
+Chaque exécution est tracée dans MLflow (run « Pipeline - réentraînement »), avec la décision d'acceptation en tag. Si le modèle est refusé, rien n'est écrit : le workflow se termine **en vert** avec le message « Modèle refusé, rien à déployer », sans commit ni déploiement. Seul un vrai plantage (données absentes, bug…) le fait échouer en rouge.
 
-Dans GitHub Actions (`retrain.yml`), le nouveau modèle n'est commité sur `main` puis déployé sur Render que si la validation **et** les tests de l'API passent. Le rapport d'évaluation (métadonnées) est conservé en artefact du workflow.
+Dans GitHub Actions (`retrain.yml`), le nouveau modèle n'est commité sur `main` puis déployé sur Render que si la validation **et** les tests de l'API passent. Les scores de chaque version sont conservés dans `agriculture_model_metadata.json`, commité avec le modèle.
 
 Limite connue : le modèle en production est entraîné sur toutes les années, il ne peut donc pas être réévalué honnêtement sur le test. La comparaison se fait avec la RMSE enregistrée dans ses métadonnées.
 

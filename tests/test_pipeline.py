@@ -18,9 +18,13 @@ class TestValidation:
         checks = pipeline.validate(evaluation, current_rmse=None)
         assert not all(checks.values())
 
-    def test_refuse_un_modele_qui_regresse_trop(self):
-        # 31 000 x 1,10 = 34 100 : 35 000 dépasse la tolérance
-        evaluation = {"modele": scores(35_000), "baseline": scores(40_000)}
+    def test_refuse_un_modele_moins_bon_que_l_actuel(self):
+        evaluation = {"modele": scores(31_500), "baseline": scores(40_000)}
+        checks = pipeline.validate(evaluation, current_rmse=31_000)
+        assert not all(checks.values())
+
+    def test_refuse_un_modele_equivalent_a_l_actuel(self):
+        evaluation = {"modele": scores(31_000), "baseline": scores(40_000)}
         checks = pipeline.validate(evaluation, current_rmse=31_000)
         assert not all(checks.values())
 
