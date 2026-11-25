@@ -406,12 +406,12 @@ Les tests lisent `API_KEY` dans le `.env` ou dans l'environnement.
 | Workflow | Déclencheur | Étapes |
 |---|---|---|
 | `.github/workflows/test.yml` | push sur `develop` | checkout avec LFS → uv → Python 3.13 → `uv sync` → `pytest` |
-| `.github/workflows/test_and_deploy.yml` | push sur `main` | mêmes étapes, préalable au déploiement |
-| `.github/workflows/retrain.yml` | push sur `main` modifiant `data/rafined/dataset.csv` ou `pipeline/`, ou lancement manuel | réentraînement → évaluation → validation → tests → commit du nouveau modèle |
+| `.github/workflows/test_and_deploy.yml` | push sur `main` (sauf changements limités aux données ou au pipeline) | mêmes étapes → déploiement Render |
+| `.github/workflows/retrain.yml` | push sur `main` modifiant `data/rafined/dataset.csv` ou `pipeline/`, ou lancement manuel | réentraînement → évaluation → validation → tests → commit du nouveau modèle → déploiement Render |
 
-La clé de test est fournie par le secret de dépôt `API_KEY`.
+Secrets de dépôt : `API_KEY` (clé de test) et `RENDER_DEPLOY_HOOK_URL` (Deploy Hook du service Render).
 
-Chaîne visée : **push → tests GitHub Actions → redéploiement automatique** (Render en mode *Auto-Deploy : After CI checks pass*).
+Le déploiement est piloté par GitHub Actions : l'auto-deploy est désactivé sur Render et chaque workflow appelle la Deploy Hook **seulement si toutes ses étapes ont réussi**. Un push ne déclenche ainsi qu'un seul déploiement, et un modèle refusé n'est jamais déployé.
 
 ### 10.3 Pipeline de réentraînement
 
@@ -431,7 +431,7 @@ uv run python -m pipeline.train
 
 Chaque exécution est tracée dans MLflow (run « Pipeline - réentraînement »), avec la décision d'acceptation en tag. Si le modèle est refusé, rien n'est écrit et le script se termine en erreur.
 
-Dans GitHub Actions (`retrain.yml`), le nouveau modèle n'est commité sur `main` que si la validation **et** les tests de l'API passent ; ce commit déclenche le redéploiement sur Render. Le rapport d'évaluation (métadonnées) est conservé en artefact du workflow.
+Dans GitHub Actions (`retrain.yml`), le nouveau modèle n'est commité sur `main` puis déployé sur Render que si la validation **et** les tests de l'API passent. Le rapport d'évaluation (métadonnées) est conservé en artefact du workflow.
 
 Limite connue : le modèle en production est entraîné sur toutes les années, il ne peut donc pas être réévalué honnêtement sur le test. La comparaison se fait avec la RMSE enregistrée dans ses métadonnées.
 
