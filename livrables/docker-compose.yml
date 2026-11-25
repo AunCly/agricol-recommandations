@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /app/.venv
+    ports:
+      - "8000:7860" # Accessible depuis http://localhost:8000
+    environment:
+      PYTHONUNBUFFERED: "1"
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uv", "run", "streamlit", "run", "dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    volumes:
+      - .:/app
+      - /app/.venv
+    ports:
+      - "8501:8501" # Accessible depuis http://localhost:8501
+    environment:
+      PYTHONUNBUFFERED: "1"
+      API_URL: "http://api:7860"

@@ -118,6 +118,13 @@ class AgricultureYieldPredictor:
         # Liste des cultures connues par le modèle
         self.cultures = self.metadata["cultures"]
 
+        # Cultures observées dans chaque pays (absent des anciennes métadonnées)
+        self.cultures_par_pays = self.metadata.get("cultures_par_pays", {})
+
+    def cultures_for(self, area: str) -> list[str]:
+        """Cultures cultivées dans le pays, ou toutes les cultures si le pays est inconnu."""
+        return self.cultures_par_pays.get(area, self.cultures)
+
     def predict(self, context: AgricolContextModel) -> dict:
         """Prédit le rendement pour la culture demandée dans le contexte."""
         data = format_data_for_ml_model(context, [context.item])
@@ -128,14 +135,17 @@ class AgricultureYieldPredictor:
         return format_yield(yield_hg_ha)
 
     def recommend(self, context: RecommendContextModel) -> list[dict]:
-        """Prédit le rendement de chaque culture et les classe par rendement décroissant."""
+        """Prédit le rendement des cultures du pays et les classe par rendement décroissant."""
+        # Seules les cultures effectivement cultivées dans le pays sont proposées
+        cultures = self.cultures_for(context.area)
+
         # Une seule prédiction pour toutes les cultures (une ligne par culture)
-        data = format_data_for_ml_model(context, self.cultures)
+        data = format_data_for_ml_model(context, cultures)
         predictions = self.model.predict(data)
 
         # Association de chaque culture à son rendement prédit
         results = []
-        for index, item in enumerate(self.cultures):
+        for index, item in enumerate(cultures):
             yield_hg_ha = float(predictions[index])
 
             result = {"item": item}

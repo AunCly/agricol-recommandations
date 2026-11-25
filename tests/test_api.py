@@ -87,6 +87,19 @@ class TestApi:
         for result in results:
             assert response_keys_needed == result.keys()
 
+    def test_recommend_only_country_crops(self, get_random_context):
+        base_dir = Path(__file__).resolve().parent.parent
+        data = pd.read_csv(base_dir / 'data/rafined/dataset.csv')
+
+        random_context = get_random_context
+        del(random_context['item'])
+        country_crops = set(data.loc[data['Area'] == random_context['area'], 'Item'])
+
+        response = client.post("/recommend", json=random_context, headers=headers)
+
+        assert response.status_code == 200
+        assert {result['item'] for result in response.json()} == country_crops
+
     def test_recommend_with_missing_fields(self, get_random_context):
         random_context = get_random_context
 
